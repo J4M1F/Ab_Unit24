@@ -1,0 +1,131 @@
+---
+title: "AB_RUIZ_JAVIER_UNIT24"
+output: html_notebook
+---
+
+
+
+```{r}
+library(readr)
+ufc_master <- read_csv("ufc-master.csv")
+```
+
+
+```{r}
+install.packages('janitor')
+
+library(tidyverse)
+library(cluster)
+library(factoextra)
+library(scales)
+library(janitor)
+```
+
+```{r}
+Luchadores_data <- bind_rows(
+  # Función para unificar datos de luchadores
+  ufc_master %>%
+    select(
+      #Datos Esquina Roja
+      Nombre = RedFighter,
+      Altura_Cms = RedHeightCms,
+      Alcanze_Cms = RedReachCms,
+      Peso_Lbs = RedWeightLbs,
+      wins_ko = RedWinsByKO,
+      wins_sub = RedWinsBySubmission,
+      wins_dec = RedWinsByDecisionUnanimous,
+      total_wins = RedWins,
+      total_losses = RedLosses,
+      stance = RedStance,
+      date = Date
+    ) %>% 
+    mutate(corner = "Rojo"),
+ufc_master%>%
+  select(
+    #Datos Esquina Azul
+      Nombre = BlueFighter,
+      Altura_Cms = BlueHeightCms,
+      Alcanze_Cms = BlueReachCms,
+      Peso_Lbs = BlueWeightLbs,
+      wins_ko = BlueWinsByKO,
+      wins_sub = BlueWinsBySubmission,
+      wins_dec = RedWinsByDecisionUnanimous,
+      total_wins = BlueWins,
+      total_losses = BlueLosses,
+      stance = BlueStance,
+      date = Date
+    ) %>% 
+    mutate(corner = "Azul")
+) %>%
+  #Agrupamos por luchador para obtener las stats más recientes
+  group_by(Nombre)%>%
+  arrange(desc(date))%>%
+  slice(1)%>%
+  ungroup()%>%
+  #Métricas adicionales
+  mutate(
+    peleas_totales = total_wins + total_losses,
+    rato_victoria = total_wins / peleas_totales,
+    
+    ratio_ko = ifelse(total_wins >0, wins_ko / total_wins, 0),
+    ratio_sum = ifelse(total_wins>0, wins_sub / total_wins, 0),
+    ratio_dec = ifelse(total_wins>0, wins_dec / total_wins, 0)
+  )%>%
+  #Eliminamos valores NA y problematicos
+  filter(
+    !is.na(Altura_Cms),
+    !is.na(Alcanze_Cms),
+    !is.na(Peso_Lbs),
+    peleas_totales > 0
+  )
+```
+
+```{r}
+variables_cluster1 <- Luchadores_data %>% 
+  select(Altura_Cms, Alcanze_Cms, Peso_Lbs,
+         rato_victoria, ratio_ko, ratio_sum
+  )
+#Normalizamos las variables
+dt_normalizados_clus1 <- scale(variables_cluster1)
+
+fviz_nbclust(dt_normalizados_clus1, kmeans, method = "wss", k.max = 10) +
+  labs(title = "Metodo Del codo para número optimo de las variables")
+
+```
+
+```{r}
+# Visualización de relación altura-alcance con peso
+ggplot(Luchadores_data, aes(x = Altura_Cms, y = Alcanze_Cms, color = Peso_Lbs)) +
+  geom_point(alpha = 0.6) +
+  scale_color_viridis_c() +
+  labs(title = "Relación entre Altura, Alcance y Peso",
+       x = "Altura (cm)",
+       y = "Alcance (cm)",
+       color = "Peso (lbs)") +
+  theme_minimal()
+
+# Distribución de métodos de victoria
+fighters_data_long <- Luchadores_data %>%
+  select(Nombre, ratio_ko, ratio_sum, ratio_dec) %>%
+  pivot_longer(cols = c(ratio_ko, ratio_sum, ratio_dec),
+               names_to = "victory_type",
+               values_to = "rate")
+
+ggplot(fighters_data_long, aes(x = rate, fill = victory_type)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Distribución de Tasas de Victoria por Método",
+       x = "Tasa de Victoria",
+       y = "Densidad",
+       fill = "Tipo de Victoria") +
+  theme_minimal()
+
+# Relación entre características físicas y métodos de victoria
+ggplot(Luchadores_data, aes(x = Alcanze_Cms/Altura_Cms, y = ratio_ko)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(title = "Relación entre Proporción Alcance/Altura y Tasa de KOs",
+       x = "Proporción Alcance/Altura",
+       y = "Tasa de Victoria por KO") +
+  theme_minimal()
+```
+
