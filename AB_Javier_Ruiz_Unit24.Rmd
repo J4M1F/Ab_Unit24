@@ -3,13 +3,10 @@ title: "AB_RUIZ_JAVIER_UNIT24"
 output: html_notebook
 ---
 
-
-
 ```{r}
 library(readr)
 ufc_master <- read_csv("ufc-master.csv")
 ```
-
 
 ```{r}
 install.packages('janitor')
@@ -37,7 +34,11 @@ Luchadores_data <- bind_rows(
       total_wins = RedWins,
       total_losses = RedLosses,
       stance = RedStance,
-      date = Date
+      date = Date,
+      sig_strikes = RedAvgSigStrLanded,
+      td_landed = RedAvgTDLanded,
+      sub_att = RedAvgSubAtt,
+      td_pct = RedAvgTDPct
     ) %>% 
     mutate(corner = "Rojo"),
 ufc_master%>%
@@ -53,7 +54,11 @@ ufc_master%>%
       total_wins = BlueWins,
       total_losses = BlueLosses,
       stance = BlueStance,
-      date = Date
+      date = Date,
+      sig_strikes = BlueAvgSigStrLanded,
+      td_landed = BlueAvgTDLanded,
+      sub_att = BlueAvgSubAtt,
+      td_pct = BlueAvgTDPct
     ) %>% 
     mutate(corner = "Azul")
 ) %>%
@@ -80,6 +85,8 @@ ufc_master%>%
   )
 ```
 
+Procesamos los datos para iniciar la exploración con Clusters. Lo primero que realice fue unir las dos esquinas (azúl y roja), cuidando de no repetir datos como las victorias, no de combates o atributos físicos, y posteriormente, descartamos valores 'NA' o 'Problemáticos'.
+
 ```{r}
 variables_cluster1 <- Luchadores_data %>% 
   select(Altura_Cms, Alcanze_Cms, Peso_Lbs,
@@ -105,14 +112,18 @@ ggplot(Luchadores_data, aes(x = Altura_Cms, y = Alcanze_Cms, color = Peso_Lbs)) 
   theme_minimal()
 
 # Distribución de métodos de victoria
+# Asegurémonos de que las tasas estén en el rango correcto [0,1]
 fighters_data_long <- Luchadores_data %>%
   select(Nombre, ratio_ko, ratio_sum, ratio_dec) %>%
   pivot_longer(cols = c(ratio_ko, ratio_sum, ratio_dec),
                names_to = "victory_type",
-               values_to = "rate")
+               values_to = "rate") %>%
+  filter(rate >= 0, rate <= 1)  # Filtramos valores fuera de rango
+
 
 ggplot(fighters_data_long, aes(x = rate, fill = victory_type)) +
   geom_density(alpha = 0.5) +
+  scale_x_continuous(limits = c(0, 1), labels = scales::percent) +
   labs(title = "Distribución de Tasas de Victoria por Método",
        x = "Tasa de Victoria",
        y = "Densidad",
@@ -129,3 +140,77 @@ ggplot(Luchadores_data, aes(x = Alcanze_Cms/Altura_Cms, y = ratio_ko)) +
   theme_minimal()
 ```
 
+La 1ª representación gráfica es especialmente valiosa para comprender los atributos físicos comunes en diversas categorías de peso y podría ser útil para reconocer luchadores con proporciones peculiares o beneficiosas para su categoría.
+
+El diagrama de densidad refleja la repartición por cada método de victoria, ya sea Ko, sumisión o decisión. General Distribución:
+
+La mayor parte de los peleadores poseen tasas de triunfo por cada técnica particular por debajo del 25%. Existen cola extendidas al 100%, lo que señala que algunos luchadores son expertos en un método específico.
+
+El tercer gráfico presenta una leve tendencia que nos indica que un alcance más amplio en relación a la altura podría incrementar las victorias por KO, sin embargo, la relación no es tan sólida como para ser considerada un elemento crucial, lo que nos indica que otros elementos como la habilidad, la estrategia o la potencia pueden tener un rol más relevante.
+
+```{r}
+# Ahora las visualizaciones con los datos unificados por luchador
+ggplot(Luchadores_data, 
+       aes(x = sig_strikes, 
+           y = td_landed,
+           color = Peso_Lbs)) +
+  geom_point(alpha = 0.6) +
+  scale_color_viridis_c() +
+  labs(title = "Estilos de Pelea por Luchador",
+       x = "Golpes Significativos por Minuto",
+       y = "Derribos por Round",
+       color = "Peso (lbs)")
+```
+
+```{r}
+estilo_lucha <- Luchadores_data %>%
+  select(sig_strikes, td_landed, Peso_Lbs)%>%
+  na.omit()
+
+estilo_lucha_escalada <- scale(estilo_lucha)
+
+set.seed(123)
+fviz_nbclust(estilo_lucha,
+             kmeans,
+             method = "wss",
+             k.max = 10,
+             linecolor = "steelblue") +
+  labs(title = "Método del codo para número óptimo de clusters",
+       x = "Número de clusters (k)",
+       y = "Suma total de cuadrados dentro del cluster")
+
+k_clusters <- kmeans(estilo_lucha_escalada, centers = 4, nstart = 25)
+
+resultados_cluster <- estilo_lucha %>%
+  mutate(cluster_id = as.factor(k_clusters$cluster))
+
+
+ggplot(resultados_cluster,
+       aes(x = sig_strikes,
+           y = td_landed,
+           color = factor(cluster_id))) +
+  geom_point(alpha = 0.6) +
+  labs(title = "Cluster Estilos de Pelea",
+       x = "Golpes significativos por Minuto",
+       y = "Derribos por Round",
+       color = "Cluster")+
+  theme_minimal()
+```
+
+El método 'codo' nos permite determinar la cantidad de agrupaciones o grupos distintos para determinar a partir de qué cantidad de grupos; no ofrece una mejora tan relevante en la explicación de la varianza.
+
+Grupo 1 (Rojo):
+
+Cualidades: Actividad reducida tanto en impactos importantes como en derribos. Interpretación: Este conjunto podría simbolizar a los peleadores defensivos o a aquellos que aspiran a dominar las peleas sin tener en cuenta el volumen de impactos o de levantamientos.
+
+Agrupación 2 (Verde):
+
+Cualidades: Alta actividad en impactos notables cada minuto, aunque con escasos o nulos derribos. Interpretación: Es probable que sean peleadores de pie expertos en striking, que se concentran en mantener el combate lejos del suelo.
+
+Grupo 3 (Cian):
+
+Cualidades: Minima frecuencia de impactos importantes, pero elevada tasa de derribos por ronda. Interpretación: Este conjunto parece reunir luchadores que se apoyan en técnicas de grappling y control sobre el suelo, tales como luchadores o expertos en sumisiones.
+
+Agrupación 4 (Morado):
+
+Cualidades: Un grupo intermedio que presenta una actividad moderada en ambas medidas. Interpretación: Simboliza un balance entre el striking y el grappling, señalando a peleadores adaptables que combinan estos estilos.
