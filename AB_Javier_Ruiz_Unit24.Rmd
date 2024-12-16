@@ -9,13 +9,14 @@ ufc_master <- read_csv("ufc-master.csv")
 ```
 
 ```{r}
-install.packages('janitor')
+
 
 library(tidyverse)
 library(cluster)
 library(factoextra)
 library(scales)
 library(janitor)
+library(stringr)
 ```
 
 ```{r}
@@ -214,3 +215,119 @@ Cualidades: Minima frecuencia de impactos importantes, pero elevada tasa de derr
 Agrupación 4 (Morado):
 
 Cualidades: Un grupo intermedio que presenta una actividad moderada en ambas medidas. Interpretación: Simboliza un balance entre el striking y el grappling, señalando a peleadores adaptables que combinan estos estilos.
+
+```{r}
+# Boxplot de peso por cluster
+ggplot(resultados_cluster, aes(x = cluster_id, y = Peso_Lbs, fill = cluster_id)) +
+  geom_boxplot() +
+  labs(title = "Distribución de Peso por Cluster")
+
+
+```
+
+### Análisis de Efectividad
+
+```{r}
+# 1. Primero asegurémonos que los datos son un dataframe
+datos_cluster1 <- as.data.frame(Luchadores_data %>%
+  filter(!is.na(td_pct),
+         !is.na(sig_strikes),
+         !is.na(ratio_sum),
+         !is.na(ratio_dec),
+         !is.na(ratio_ko),
+         is.finite(td_pct),
+         is.finite(ratio_dec),
+         td_pct >= 0,
+         td_pct <= 1,
+         ratio_dec >= 0) %>%
+  select(td_pct, ratio_dec, sig_strikes, ratio_sum, ratio_ko))
+
+# 2. Realizar clustering
+set.seed(123)
+kmeans_result <- kmeans(datos_cluster1, centers = 4)
+
+# 3. Crear un nuevo dataframe con los clusters
+datos_con_cluster <- datos_cluster1 %>%
+  mutate(cluster = as.factor(kmeans_result$cluster))
+```
+
+
+```{r}
+ggplot(data = datos_con_cluster, 
+       aes(x = sig_strikes, y = ratio_ko, color = cluster)) +
+  geom_point(alpha=0.7, size=2) +
+  scale_color_manual(values = c("1" = "#F8766D",
+                               "2" = "#7CAE00",
+                               "3" = "#00BFC4",
+                               "4" = "#C77CFF")) +
+  labs(title = "Cluster de Efectividad de Luchadores",
+       x = "Precisión de Golpes Significativos(%)",
+       y = "Porcentaje Victorias por KO(%)",
+       color = "cluster") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14),
+    axis.title = element_text(size = 12),
+    legend.title = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "gray90")
+  ) 
+```
+
+Observaciones Fundamentales:
+Agrupación 2 (verde): Los peleadores poseen una precisión reducida pero una gran capacidad de KO, lo que indica estilos agresivos y aprovechables.
+Grupo 3 (color azul): Luchadores exactos pero con menor eficacia en los KO, lo cual podría requerir combates más extensos y técnicos.
+Cluster 4 (color violeta): Balance entre precisión moderada y porcentajes de ejecución correctos.
+Grupo 1 (rojo): Mayor variabilidad, con boxeadores en diversos grados de precisión y KO.
+Conclusión Concisa:
+Este diagrama indica patrones de lucha entre grupos:
+
+Los peleadores precisos (grupo 3) tienden a no perseguir el KO.
+Los peleadores menos exactos (cluster 2) compensan con una alta habilidad para KO.
+El estudio de agrupaciones podría profundizar en cómo la exactitud y el estilo de disparo influyen en los resultados en luchas.
+
+```{r}
+
+
+ggplot(data = datos_con_cluster,  # Especificamos explícitamente el parámetro data
+       aes(x = td_pct, y = ratio_dec, color = cluster)) +
+  geom_point(alpha=0.7, size=2) +
+  scale_color_manual(values = c("1" = "#F8766D",
+                               "2" = "#7CAE00",
+                               "3" = "#00BFC4",
+                               "4" = "#C77CFF")) +
+  labs(title = "Precisión de Derribos VS Victorias por Decisión",
+       x = "Precisión de Derribos(%)",
+       y = "Porcentaje victorias por Decisión") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14),
+    axis.title = element_text(size = 12),
+    legend.title = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "gray90")
+  ) +
+  scale_x_continuous(limits = c(0, 1),
+                    labels = function(x) paste0(x * 100, "%")) +
+  scale_y_continuous(limits = c(0, 8),
+                    breaks = seq(0, 8, 2))
+                     
+```
+
+Distribución exacta de Derribos:
+La mayor parte de los peleadores se enfocan en una exactitud de derribos del 20% al 50%.
+Numerosos peleadores alcanzan más del 75% de precisión, lo que indica que lograr una precisión elevada es complicado.
+La distribución indica un incremento en la densidad de los clusters 1 (rojo) y 2 (verde) en los niveles de bajo a moderado.
+Patrones de Logros por Resolución:
+La mayoría de los peleadores poseen un porcentaje de triunfos por decisión que oscila entre el 0% y el 2%.
+Los outliers (grupo 3, color azul) destacan con triunfos por decisión que oscilan entre el 4% y el 8%, lo que podría sugerir un estilo de combate específico centrado en el control y la resistencia.
+Los competidores del grupo 2 (verde) se mantienen con escasas ganancias por decisión, incluso con exactitudes cercanas al 100%.
+
+Observaciones Particulares:
+El grupo 3 (azul) tiene preponderancia en los valores extremos: elevada exactitud en los derribos y victorias evidentes por decisión.
+El grupo 1 (rojo) muestra una mayor variabilidad en la exactitud de los derribos, aunque existen escasas victorias por decisión.
+El clúster 4 (morado) se ubica en la zona de baja precisión y victorias reducidas, evidenciando una tendencia de disminución en este indicador.
+Conclusión Concisa:
+El estudio indica que peleadores con alta exactitud en los derribos no siempre garantizan triunfos por decisión (grupos 2 y 3). El cluster 3 exhibe rasgos destacados que requieren más estudio, tales como el estilo de lucha o la duración de las batallas.
