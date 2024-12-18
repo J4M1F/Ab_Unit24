@@ -101,6 +101,8 @@ fviz_nbclust(dt_normalizados_clus1, kmeans, method = "wss", k.max = 10) +
 
 ```
 
+Gracias al método del codo, determino el número de clusters óptimo para realizar el proyecto. Viendo el gráfico, determino que el número óptimo es 3 o 4; me decanto por hacerlo con 4 para obtener una mayor segmentación en el análisis.  
+
 ```{r}
 # Visualización de relación altura-alcance con peso
 ggplot(Luchadores_data, aes(x = Altura_Cms, y = Alcanze_Cms, color = Peso_Lbs)) +
@@ -331,3 +333,59 @@ El grupo 1 (rojo) muestra una mayor variabilidad en la exactitud de los derribos
 El clúster 4 (morado) se ubica en la zona de baja precisión y victorias reducidas, evidenciando una tendencia de disminución en este indicador.
 Conclusión Concisa:
 El estudio indica que peleadores con alta exactitud en los derribos no siempre garantizan triunfos por decisión (grupos 2 y 3). El cluster 3 exhibe rasgos destacados que requieren más estudio, tales como el estilo de lucha o la duración de las batallas.
+
+```{r}
+datos_long <- datos_con_cluster %>%
+  pivot_longer(cols = c(td_pct, ratio_dec, ratio_ko, ratio_sum, sig_strikes),
+               names_to = "variable",
+               values_to = "value")
+ggplot(datos_long, aes(x = cluster, y = value, fill = cluster)) +
+  geom_boxplot() +
+  facet_wrap(~variable, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Distribución de variables por Cluster",
+       x = "Cluster",
+       y = "Valor") +
+  theme(legend.position = "none")
+```
+Grupo 1 (Rojo):
+
+
+Ratio_dec moderado
+Ratio_ko alto
+Ratio_sum moderado
+Sig_strikes bajos
+Td_pct moderado
+→ Propone peleadores que optan por finalizar las batallas por KO, con un estilo más enérgico.
+
+
+Cluster 2 (Verde):
+
+
+Ratio_dec bajo
+Ratio_ko moderado
+Ratio_sum alto
+Sig_strikes muy bajos
+Td_pct alto
+→ Parece simbolizar luchadores expertos en sumisión con un buen golpeo.
+
+
+Cluster 3 (Azul):
+
+
+Sig_strikes muy altos
+Ratios más equilibrados
+Td_pct moderado-bajo
+→ Representa strikers técnicos que valoran el volumen de los golpes.
+
+
+Cluster 4 (Morado):
+
+
+Ratio_dec alto
+Otros ratios moderados-bajos
+Sig_strikes moderados
+→ Sugiere luchadores que tienden a llevar las peleas a decisión.
+
+
+
