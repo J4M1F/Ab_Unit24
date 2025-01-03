@@ -1,0 +1,134 @@
+---
+title: "AB Final Unit24"
+output: html_notebook
+---
+
+```{r}
+head(ufc_master)
+```
+
+```{r}
+# Cargar las librerías necesarias
+library(tidyverse)
+library(cluster)
+library(factoextra)
+library(NbClust)
+library(scales)
+```
+
+```{r}
+#Preparación de datos.
+fighters_df <- function(ufc_master){
+  red_fighters <- ufc_master %>% 
+    select(
+      fighter_name = RedFighter,
+      #Atributos físicos
+      heightCms = RedHeightCms,
+      reachCms = RedReachCms,
+      weightLbs = RedWeightLbs,
+      age = RedAge,
+      stance = RedStance,
+      #Estadísticas de rendimiento
+      avg_sig_strikes_landed = RedAvgSigStrLanded,
+      avg_sig_strikes_pct = RedAvgSigStrPct,
+      avg_takedowns_landed = RedAvgTDLanded,
+      avg_takedown_pct = RedAvgTDPct,
+      avg_sub_attempts = RedAvgSubAtt,
+      # Rachas y Experiencia
+      current_lose_streak = RedCurrentLoseStreak,
+      current_win_streak = RedCurrentWinStreak,
+      longest_win_streak = RedLongestWinStreak,
+      total_rounds = RedTotalRoundsFought,
+      total_title_bouts = RedTotalTitleBouts,
+      #Métodos de victoria
+       wins_ko = RedWinsByKO,
+      wins_sub = RedWinsBySubmission,
+      wins_dec = RedWinsByDecisionUnanimous + RedWinsByDecisionSplit +     RedWinsByDecisionMajority,
+      total_wins = RedWins,
+      total_losses = RedLosses,
+      total_draws = RedDraws,
+      Date
+    )
+  blue_fighters <- ufc_master %>%
+    select(
+      fighter_name = BlueFighter,
+      # Atributos físicos
+      height = BlueHeightCms,
+      reach = BlueReachCms,
+      weight = BlueWeightLbs,
+      age = BlueAge,
+      stance = BlueStance,
+      # Estadísticas de rendimiento
+      avg_sig_strikes_landed = BlueAvgSigStrLanded,
+      avg_sig_strikes_pct = BlueAvgSigStrPct,
+      avg_takedowns_landed = BlueAvgTDLanded,
+      avg_takedown_pct = BlueAvgTDPct,
+      avg_sub_attempts = BlueAvgSubAtt,
+      # Rachas y experiencia
+      current_lose_streak = BlueCurrentLoseStreak,
+      current_win_streak = BlueCurrentWinStreak,
+      longest_win_streak = BlueLongestWinStreak,
+      total_rounds = BlueTotalRoundsFought,
+      total_title_bouts = BlueTotalTitleBouts,
+      # Métodos de victoria
+      wins_ko = BlueWinsByKO,
+      wins_sub = BlueWinsBySubmission,
+      wins_dec = BlueWinsByDecisionUnanimous + BlueWinsByDecisionSplit + BlueWinsByDecisionMajority,
+      total_wins = BlueWins,
+      total_losses = BlueLosses,
+      total_draws = BlueDraws,
+      Date
+    )
+
+#Combinamos ambas esquinas
+all_figthers <- bind_rows(red_fighters, blue_fighters)
+ # Obtener los datos más recientes para cada luchador
+  latest_fighter_data <- all_fighters %>%
+    group_by(fighter_name) %>%
+    arrange(desc(Date)) %>%
+    slice(1) %>%
+    ungroup()
+ fighter_stats <- latest_fighter_data %>%
+    mutate(
+      wins_dec = wins_dec_unanimous + wins_dec_split + wins_dec_majority,
+      win_rate = total_wins / (total_wins + total_losses),
+      ko_rate = wins_ko / total_wins,
+      sub_rate = wins_sub / total_wins,
+      dec_rate = wins_dec / total_wins,
+      finish_rate = (wins_ko + wins_sub) / total_wins,
+      experience_level = total_rounds / 5,
+      striking_preference = wins_ko / (wins_ko + wins_sub),
+      grappling_preference = wins_sub / (wins_ko + wins_sub),
+      takedown_efficiency = avg_takedowns_landed * avg_takedown_pct,
+      striking_efficiency = avg_sig_strikes_landed * avg_sig_strikes_pct
+    ) %>%
+    select(-Date, -wins_dec_unanimous, -wins_dec_split, -wins_dec_majority)
+
+  return(fighter_stats)
+}
+```
+
+```{r}
+  # Seleccionar variables para clustering
+  vars_for_clustering <- fighter_stats %>%
+    select(
+      height, reach, weight,
+      avg_sig_strikes_landed, avg_sig_strikes_pct,
+      avg_takedowns_landed, avg_takedown_pct,
+      avg_sub_attempts,
+      win_rate, ko_rate, sub_rate, dec_rate,
+      finish_rate, experience_level,
+      striking_preference, grappling_preference,
+      takedown_efficiency, striking_efficiency
+    )
+  
+  print("Variables seleccionadas para clustering")
+  
+  # Eliminar NAs y normalizar
+  vars_normalized <- scale(na.omit(vars_for_clustering))
+  print("Datos normalizados")
+```
+```{r}
+head(figthers_stats)
+```
+
