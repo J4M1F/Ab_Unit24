@@ -3,17 +3,35 @@ title: "AB Final Unit24"
 output: html_notebook
 ---
 
+#Preparación del DataSet
+
+-   Importo el conjunto de datos
+
+-   Instalo los paquetes y librerías necesarias
+
+-   Limpio el conjunto de datos para su manipulación
+
+-   Selección de las variables para el clustering
+
 ```{r}
-head(ufc_master)
+#Importo el DataSet
+library(readr)
+ufc_master <- read_csv("ufc-master.csv")
 ```
 
 ```{r}
 # Cargar las librerías necesarias
 library(tidyverse)
+library(moments)
+library(RColorBrewer)
+install.packages("cluster")
 library(cluster)
 library(factoextra)
-library(NbClust)
-library(scales)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(gridExtra)
+library(StatMatch)
 ```
 
 ```{r}
@@ -88,6 +106,7 @@ all_figthers <- bind_rows(red_fighters, blue_fighters)
     arrange(desc(Date)) %>%
     slice(1) %>%
     ungroup()
+#Métricas adicionales  
  fighter_stats <- latest_fighter_data %>%
     mutate(
       wins_dec = wins_dec_unanimous + wins_dec_split + wins_dec_majority,
@@ -109,26 +128,211 @@ all_figthers <- bind_rows(red_fighters, blue_fighters)
 ```
 
 ```{r}
-  # Seleccionar variables para clustering
-  vars_for_clustering <- fighter_stats %>%
-    select(
-      height, reach, weight,
-      avg_sig_strikes_landed, avg_sig_strikes_pct,
-      avg_takedowns_landed, avg_takedown_pct,
-      avg_sub_attempts,
-      win_rate, ko_rate, sub_rate, dec_rate,
-      finish_rate, experience_level,
-      striking_preference, grappling_preference,
-      takedown_efficiency, striking_efficiency
-    )
-  
-  print("Variables seleccionadas para clustering")
-  
-  # Eliminar NAs y normalizar
-  vars_normalized <- scale(na.omit(vars_for_clustering))
-  print("Datos normalizados")
-```
-```{r}
-head(figthers_stats)
+red_fighters <- ufc_master %>%
+  select(
+    fighter_name = RedFighter,
+    height = RedHeightCms,
+    reach = RedReachCms,
+    weight = RedWeightLbs,
+    age = RedAge,
+    stance = RedStance,
+    avg_sig_strikes_landed = RedAvgSigStrLanded,
+    avg_sig_strikes_pct = RedAvgSigStrPct,
+    avg_takedowns_landed = RedAvgTDLanded,
+    avg_takedown_pct = RedAvgTDPct,
+    avg_sub_attempts = RedAvgSubAtt,
+    total_wins = RedWins,
+    total_losses = RedLosses,
+    wins_ko = RedWinsByKO,
+    wins_sub = RedWinsBySubmission,
+    Date
+  )
+
+# Extraer datos de esquina azul
+blue_fighters <- ufc_master %>%
+  select(
+    fighter_name = BlueFighter,
+    height = BlueHeightCms,
+    reach = BlueReachCms,
+    weight = BlueWeightLbs,
+    age = BlueAge,
+    stance = BlueStance,
+    avg_sig_strikes_landed = BlueAvgSigStrLanded,
+    avg_sig_strikes_pct = BlueAvgSigStrPct,
+    avg_takedowns_landed = BlueAvgTDLanded,
+    avg_takedown_pct = BlueAvgTDPct,
+    avg_sub_attempts = BlueAvgSubAtt,
+    total_wins = BlueWins,
+    total_losses = BlueLosses,
+    wins_ko = BlueWinsByKO,
+    wins_sub = BlueWinsBySubmission,
+    Date
+  )
+
+# Combinar datos de ambas esquinas
+all_fighters <- bind_rows(red_fighters, blue_fighters)
+
+# Verificar la estructura de los datos
+str(all_fighters)
+
+# Obtener los datos más recientes para cada luchador
+latest_fighter_data <- all_fighters %>%
+  group_by(fighter_name) %>%
+  arrange(desc(Date)) %>%
+  slice(1) %>%
+  ungroup()
+
+# Calcular métricas adicionales
+fighter_stats <- latest_fighter_data %>%
+  mutate(
+    win_rate = total_wins / (total_wins + total_losses),
+    ko_rate = ifelse(total_wins > 0, wins_ko / total_wins, 0),
+    sub_rate = ifelse(total_wins > 0, wins_sub / total_wins, 0),
+    striking_efficiency = avg_sig_strikes_landed * avg_sig_strikes_pct,
+    takedown_efficiency = avg_takedowns_landed * avg_takedown_pct
+  )
+
 ```
 
+```{r}
+# Seleccionar variables para clustering
+vars_for_clustering <- fighter_stats %>%
+  select(
+    height, reach, weight,
+    avg_sig_strikes_landed, avg_sig_strikes_pct,
+    avg_takedowns_landed, avg_takedown_pct,
+    avg_sub_attempts,
+    win_rate, ko_rate, sub_rate,
+    striking_efficiency, takedown_efficiency
+  )
+
+# Verificar que tenemos los datos seleccionados
+print("Dimensiones de los datos para clustering:")
+dim(vars_for_clustering)
+
+# Eliminar filas con NA
+vars_clean <- na.omit(vars_for_clustering)
+print("Dimensiones después de eliminar NA:")
+dim(vars_clean)
+
+# Normalizar los datos
+vars_normalized <- scale(vars_clean)
+print("Dimensiones de los datos normalizados:")
+dim(vars_normalized)
+```
+
+#Distancias
+
+Una vez normalizados los datos procedo a crear distancias con los metodos 'Euclidean' y 'Gower', para comparar cual de los dos metodos voy a utilizar en cla creación del cluster
+
+```{r}
+compare_euclidean_gower <- function(data_normalized) {
+  # Calcular las matrices de distancia
+  euclidean_dist <- dist(data_normalized, method = "euclidean")
+  gower_dist <- daisy(data_normalized, metric = "gower")
+  
+  # Función para procesar cada matriz de distancia
+  process_distances <- function(dist_matrix, method_name) {
+    dist_vec <- as.vector(as.matrix(dist_matrix))
+    data.frame(
+      distance = dist_vec,
+      method = method_name
+    )
+  }
+  
+  # Combinar los dos métodos en un único dataframe
+  all_distances <- rbind(
+    process_distances(euclidean_dist, "Euclidean"),
+    process_distances(gower_dist, "Gower")
+  )
+  
+  # Normalizar las distancias por método
+  all_distances <- all_distances %>%
+    group_by(method) %>%
+    mutate(
+      distance_norm = (distance - min(distance)) / (max(distance) - min(distance))
+    ) %>%
+    ungroup()
+  
+  # Crear visualizaciones
+  p1 <- ggplot(all_distances, aes(x = distance_norm, fill = method)) +
+    geom_density(alpha = 0.6) +
+    facet_wrap(~method) +
+    theme_minimal() +
+    labs(title = "Distribución de Distancias: Euclidean vs Gower",
+         subtitle = "Distancias normalizadas para comparación",
+         x = "Distancia (normalizada)",
+         y = "Densidad") +
+    scale_fill_manual(values = c("skyblue", "lightgreen")) +
+    theme(legend.position = "none")
+  
+  p2 <- ggplot(all_distances, aes(x = method, y = distance_norm, fill = method)) +
+    geom_violin(alpha = 0.6) +
+    geom_boxplot(width = 0.2, alpha = 0.8) +
+    theme_minimal() +
+    labs(title = "Comparación de Distribuciones",
+         x = "Método",
+         y = "Distancia (normalizada)") +
+    scale_fill_manual(values = c("skyblue", "lightgreen")) +
+    theme(legend.position = "none")
+  
+  # Calcular estadísticas para cada método
+  stats_summary <- all_distances %>%
+    group_by(method) %>%
+    summarise(
+      Asimetria = round(skewness(distance), 3),
+      Curtosis = round(kurtosis(distance), 3),
+      Media = round(mean(distance), 4),
+      Mediana = round(median(distance), 4),
+      DesvEst = round(sd(distance), 4),
+      CV = round(sd(distance)/mean(distance), 4),
+      Q1 = round(quantile(distance, 0.25), 4),
+      Q3 = round(quantile(distance, 0.75), 4)
+    )
+  
+  # Mostrar gráficos
+  grid.arrange(p1, p2, 
+               layout_matrix = rbind(c(1,1), c(2,2)),
+               heights = c(2, 1))
+  
+  # Imprimir estadísticas
+  cat("\nEstadísticas resumidas por método:\n")
+  print(stats_summary)
+  
+  # Evaluación detallada
+  cat("\nEvaluación de métodos:\n")
+  for(method in c("Euclidean", "Gower")) {
+    cat("\n", method, ":\n")
+    stats <- stats_summary[stats_summary$method == method,]
+    
+    # Evaluar distribución
+    cat("- Forma de la distribución:\n")
+    if(abs(stats$Asimetria) < 0.5) {
+      cat("  * Muy simétrica (asimetría: ", stats$Asimetria, ")\n")
+    } else if(abs(stats$Asimetria) < 1) {
+      cat("  * Moderadamente simétrica (asimetría: ", stats$Asimetria, ")\n")
+    } else {
+      cat("  * Asimétrica (asimetría: ", stats$Asimetria, ")\n")
+    }
+    
+    # Evaluar dispersión
+    cat("- Dispersión:\n")
+    cat("  * Coeficiente de variación: ", stats$CV, "\n")
+    cat("  * Rango intercuartílico: ", stats$Q3 - stats$Q1, "\n")
+  }
+  
+  return(list(
+    distances = list(
+      euclidean = euclidean_dist,
+      gower = gower_dist
+    ),
+    stats = stats_summary,
+    plot_data = all_distances
+  ))
+}
+results <- compare_euclidean_gower(vars_normalized)
+```
+
+En base a las visualizaciones, considero que la distancia de Gower es la alternativa más apropiada para este conjunto de datos por diversas razones fundamentales: La distribución de Gower presenta una forma más parecida a la normal (campana de Gauss), con un centro aproximado de 0.4, lo que señala una mayor habilidad para diferenciar entre casos parecidos y distintos. Aunque la distancia Euclidiana está inclinada hacia valores inferiores (centrada en 0.25), esto podría provocar una disminución en la sensibilidad para identificar diferencias entre los luchadores.
+
+El violin plot de Gower presenta una dispersión más balanceada y uniforme, con menos valores extremos, lo que indica que será más sólida en la creación de agrupaciones. Los boxplots corroboran esta observación, evidenciando una distribución de las distancias más uniforme. Además, nuestro dataset de UFC incluye una combinación de variables (tanto numéricas como categóricas, como el stance y diversas métricas de rendimiento), Gower resulta especialmente adecuada puesto que está diseñada específicamente para gestionar variables combinadas, normalizándolas de manera automática.
