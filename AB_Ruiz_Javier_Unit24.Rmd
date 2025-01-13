@@ -21,10 +21,15 @@ ufc_master <- read_csv("ufc-master.csv")
 
 ```{r}
 # Cargar las librerías necesarias
+install.packages("Rtsne")
+install.packages("ggrepel")
+install.packages("NbClust")
+install.packages("cluster")
+install.packages("GGally")
+
 library(tidyverse)
 library(moments)
 library(RColorBrewer)
-install.packages("cluster")
 library(cluster)
 library(factoextra)
 library(ggplot2)
@@ -32,108 +37,20 @@ library(tidyr)
 library(dplyr)
 library(gridExtra)
 library(StatMatch)
+library(Rtsne)
+library(ggrepel)
+library(NbClust)
+library(GGally)
 ```
 
 ```{r}
-#Preparación de datos.
-fighters_df <- function(ufc_master){
-  red_fighters <- ufc_master %>% 
-    select(
-      fighter_name = RedFighter,
-      #Atributos físicos
-      heightCms = RedHeightCms,
-      reachCms = RedReachCms,
-      weightLbs = RedWeightLbs,
-      age = RedAge,
-      stance = RedStance,
-      #Estadísticas de rendimiento
-      avg_sig_strikes_landed = RedAvgSigStrLanded,
-      avg_sig_strikes_pct = RedAvgSigStrPct,
-      avg_takedowns_landed = RedAvgTDLanded,
-      avg_takedown_pct = RedAvgTDPct,
-      avg_sub_attempts = RedAvgSubAtt,
-      # Rachas y Experiencia
-      current_lose_streak = RedCurrentLoseStreak,
-      current_win_streak = RedCurrentWinStreak,
-      longest_win_streak = RedLongestWinStreak,
-      total_rounds = RedTotalRoundsFought,
-      total_title_bouts = RedTotalTitleBouts,
-      #Métodos de victoria
-       wins_ko = RedWinsByKO,
-      wins_sub = RedWinsBySubmission,
-      wins_dec = RedWinsByDecisionUnanimous + RedWinsByDecisionSplit +     RedWinsByDecisionMajority,
-      total_wins = RedWins,
-      total_losses = RedLosses,
-      total_draws = RedDraws,
-      Date
-    )
-  blue_fighters <- ufc_master %>%
-    select(
-      fighter_name = BlueFighter,
-      # Atributos físicos
-      height = BlueHeightCms,
-      reach = BlueReachCms,
-      weight = BlueWeightLbs,
-      age = BlueAge,
-      stance = BlueStance,
-      # Estadísticas de rendimiento
-      avg_sig_strikes_landed = BlueAvgSigStrLanded,
-      avg_sig_strikes_pct = BlueAvgSigStrPct,
-      avg_takedowns_landed = BlueAvgTDLanded,
-      avg_takedown_pct = BlueAvgTDPct,
-      avg_sub_attempts = BlueAvgSubAtt,
-      # Rachas y experiencia
-      current_lose_streak = BlueCurrentLoseStreak,
-      current_win_streak = BlueCurrentWinStreak,
-      longest_win_streak = BlueLongestWinStreak,
-      total_rounds = BlueTotalRoundsFought,
-      total_title_bouts = BlueTotalTitleBouts,
-      # Métodos de victoria
-      wins_ko = BlueWinsByKO,
-      wins_sub = BlueWinsBySubmission,
-      wins_dec = BlueWinsByDecisionUnanimous + BlueWinsByDecisionSplit + BlueWinsByDecisionMajority,
-      total_wins = BlueWins,
-      total_losses = BlueLosses,
-      total_draws = BlueDraws,
-      Date
-    )
-
-#Combinamos ambas esquinas
-all_figthers <- bind_rows(red_fighters, blue_fighters)
- # Obtener los datos más recientes para cada luchador
-  latest_fighter_data <- all_fighters %>%
-    group_by(fighter_name) %>%
-    arrange(desc(Date)) %>%
-    slice(1) %>%
-    ungroup()
-#Métricas adicionales  
- fighter_stats <- latest_fighter_data %>%
-    mutate(
-      wins_dec = wins_dec_unanimous + wins_dec_split + wins_dec_majority,
-      win_rate = total_wins / (total_wins + total_losses),
-      ko_rate = wins_ko / total_wins,
-      sub_rate = wins_sub / total_wins,
-      dec_rate = wins_dec / total_wins,
-      finish_rate = (wins_ko + wins_sub) / total_wins,
-      experience_level = total_rounds / 5,
-      striking_preference = wins_ko / (wins_ko + wins_sub),
-      grappling_preference = wins_sub / (wins_ko + wins_sub),
-      takedown_efficiency = avg_takedowns_landed * avg_takedown_pct,
-      striking_efficiency = avg_sig_strikes_landed * avg_sig_strikes_pct
-    ) %>%
-    select(-Date, -wins_dec_unanimous, -wins_dec_split, -wins_dec_majority)
-
-  return(fighter_stats)
-}
-```
-
-```{r}
-red_fighters <- ufc_master %>%
+# 1. Primero creamos el dataframe de luchadores rojos
+red_fighters <- ufc_master %>% 
   select(
     fighter_name = RedFighter,
-    height = RedHeightCms,
-    reach = RedReachCms,
-    weight = RedWeightLbs,
+    heightCms = RedHeightCms,
+    reachCms = RedReachCms,
+    weightLbs = RedWeightLbs,
     age = RedAge,
     stance = RedStance,
     avg_sig_strikes_landed = RedAvgSigStrLanded,
@@ -141,20 +58,29 @@ red_fighters <- ufc_master %>%
     avg_takedowns_landed = RedAvgTDLanded,
     avg_takedown_pct = RedAvgTDPct,
     avg_sub_attempts = RedAvgSubAtt,
-    total_wins = RedWins,
-    total_losses = RedLosses,
+    current_lose_streak = RedCurrentLoseStreak,
+    current_win_streak = RedCurrentWinStreak,
+    longest_win_streak = RedLongestWinStreak,
+    total_rounds = RedTotalRoundsFought,
+    total_title_bouts = RedTotalTitleBouts,
     wins_ko = RedWinsByKO,
     wins_sub = RedWinsBySubmission,
+    wins_dec_maj = RedWinsByDecisionMajority,
+    wins_dec_split = RedWinsByDecisionSplit,
+    wins_dec_unan = RedWinsByDecisionUnanimous,
+    total_wins = RedWins,
+    total_losses = RedLosses,
+    total_draws = RedDraws,
     Date
   )
 
-# Extraer datos de esquina azul
+# 2. Luego creamos el dataframe de luchadores azules
 blue_fighters <- ufc_master %>%
   select(
     fighter_name = BlueFighter,
-    height = BlueHeightCms,
-    reach = BlueReachCms,
-    weight = BlueWeightLbs,
+    heightCms = BlueHeightCms,
+    reachCms = BlueReachCms,
+    weightLbs = BlueWeightLbs,
     age = BlueAge,
     stance = BlueStance,
     avg_sig_strikes_landed = BlueAvgSigStrLanded,
@@ -162,43 +88,86 @@ blue_fighters <- ufc_master %>%
     avg_takedowns_landed = BlueAvgTDLanded,
     avg_takedown_pct = BlueAvgTDPct,
     avg_sub_attempts = BlueAvgSubAtt,
-    total_wins = BlueWins,
-    total_losses = BlueLosses,
+    current_lose_streak = BlueCurrentLoseStreak,
+    current_win_streak = BlueCurrentWinStreak,
+    longest_win_streak = BlueLongestWinStreak,
+    total_rounds = BlueTotalRoundsFought,
+    total_title_bouts = BlueTotalTitleBouts,
     wins_ko = BlueWinsByKO,
     wins_sub = BlueWinsBySubmission,
+    wins_dec_maj = BlueWinsByDecisionMajority,
+    wins_dec_split = BlueWinsByDecisionSplit,
+    wins_dec_unan = BlueWinsByDecisionUnanimous,
+    total_wins = BlueWins,
+    total_losses = BlueLosses,
+    total_draws = BlueDraws,
     Date
   )
 
-# Combinar datos de ambas esquinas
+# 3. Combinamos ambos dataframes
 all_fighters <- bind_rows(red_fighters, blue_fighters)
 
-# Verificar la estructura de los datos
-str(all_fighters)
-
-# Obtener los datos más recientes para cada luchador
+# 4. Obtenemos los datos más recientes por luchador
 latest_fighter_data <- all_fighters %>%
   group_by(fighter_name) %>%
   arrange(desc(Date)) %>%
   slice(1) %>%
   ungroup()
 
-# Calcular métricas adicionales
+# 5. Calculamos las métricas adicionales
 fighter_stats <- latest_fighter_data %>%
   mutate(
+    wins_dec = wins_dec_maj + wins_dec_split + wins_dec_unan,
     win_rate = total_wins / (total_wins + total_losses),
-    ko_rate = ifelse(total_wins > 0, wins_ko / total_wins, 0),
-    sub_rate = ifelse(total_wins > 0, wins_sub / total_wins, 0),
-    striking_efficiency = avg_sig_strikes_landed * avg_sig_strikes_pct,
-    takedown_efficiency = avg_takedowns_landed * avg_takedown_pct
+    ko_rate = wins_ko / total_wins,
+    sub_rate = wins_sub / total_wins,
+    dec_rate = wins_dec / total_wins,
+    finish_rate = (wins_ko + wins_sub) / total_wins,
+    experience_level = total_rounds / 5,
+    striking_preference = wins_ko / (wins_ko + wins_sub),
+    grappling_preference = wins_sub / (wins_ko + wins_sub),
+    takedown_efficiency = avg_takedowns_landed * avg_takedown_pct,
+    striking_efficiency = avg_sig_strikes_landed * avg_sig_strikes_pct
   )
 
+# Verificar las dimensiones en cada paso
+print("Dimensiones de red_fighters:")
+print(dim(red_fighters))
+print("\nDimensiones de blue_fighters:")
+print(dim(blue_fighters))
+print("\nDimensiones de all_fighters:")
+print(dim(all_fighters))
+print("\nDimensiones de latest_fighter_data:")
+print(dim(latest_fighter_data))
+print("\nDimensiones de fighter_stats:")
+print(dim(fighter_stats))
 ```
+#Distancias
+
+Procedo a crear distancias con los metodos 'Euclidean' y 'Gower', para comparar cual de los dos metodos voy a utilizar en cla creación del cluster
 
 ```{r}
+# Definimos una función para Euclidiana y Gower 
+compare_distances <- function(data) {
+  library(cluster)
+  
+  # Calcular las distancias
+  dist_euclidean <- dist(data, method = "euclidean")
+  dist_gower <- daisy(data, metric = "gower")
+  
+  # Crear lista de resultados
+  results <- list(
+    euclidean = dist_euclidean,
+    gower = dist_gower
+  )
+  
+  return(results)
+}
+
 # Seleccionar variables para clustering
 vars_for_clustering <- fighter_stats %>%
   select(
-    height, reach, weight,
+    heightCms, reachCms, weightLbs,
     avg_sig_strikes_landed, avg_sig_strikes_pct,
     avg_takedowns_landed, avg_takedown_pct,
     avg_sub_attempts,
@@ -206,24 +175,22 @@ vars_for_clustering <- fighter_stats %>%
     striking_efficiency, takedown_efficiency
   )
 
-# Verificar que tenemos los datos seleccionados
-print("Dimensiones de los datos para clustering:")
-dim(vars_for_clustering)
-
 # Eliminar filas con NA
 vars_clean <- na.omit(vars_for_clustering)
-print("Dimensiones después de eliminar NA:")
-dim(vars_clean)
 
 # Normalizar los datos
 vars_normalized <- scale(vars_clean)
-print("Dimensiones de los datos normalizados:")
-dim(vars_normalized)
+
+# Calcular las distancias
+distances <- compare_distances(vars_normalized)
+
+# Guardamos las distancias para usar después
+dist_euclidean <- distances$euclidean
+dist_gower <- distances$gower
 ```
 
-#Distancias
 
-Una vez normalizados los datos procedo a crear distancias con los metodos 'Euclidean' y 'Gower', para comparar cual de los dos metodos voy a utilizar en cla creación del cluster
+
 
 ```{r}
 compare_euclidean_gower <- function(data_normalized) {
@@ -336,3 +303,537 @@ results <- compare_euclidean_gower(vars_normalized)
 En base a las visualizaciones, considero que la distancia de Gower es la alternativa más apropiada para este conjunto de datos por diversas razones fundamentales: La distribución de Gower presenta una forma más parecida a la normal (campana de Gauss), con un centro aproximado de 0.4, lo que señala una mayor habilidad para diferenciar entre casos parecidos y distintos. Aunque la distancia Euclidiana está inclinada hacia valores inferiores (centrada en 0.25), esto podría provocar una disminución en la sensibilidad para identificar diferencias entre los luchadores.
 
 El violin plot de Gower presenta una dispersión más balanceada y uniforme, con menos valores extremos, lo que indica que será más sólida en la creación de agrupaciones. Los boxplots corroboran esta observación, evidenciando una distribución de las distancias más uniforme. Además, nuestro dataset de UFC incluye una combinación de variables (tanto numéricas como categóricas, como el stance y diversas métricas de rendimiento), Gower resulta especialmente adecuada puesto que está diseñada específicamente para gestionar variables combinadas, normalizándolas de manera automática.
+
+#Cluester
+
+```{r}
+# 1. Crear t-SNE
+set.seed(123)  # Para reproducibilidad
+tsne_result <- Rtsne(vars_normalized, dims = 2, perplexity = 30, verbose = TRUE)
+
+# 2. Preparar los datos para el gráfico
+tsne_data <- data.frame(
+  tSNE1 = tsne_result$Y[,1],
+  tSNE2 = tsne_result$Y[,2],
+  fighter = fighter_stats$fighter_name[row.names(vars_clean)]  # Agregar nombres
+)
+
+# 3. Crear un gráfico 
+ggplot(tsne_data, aes(x = tSNE1, y = tSNE2, label = fighter)) +
+  # Puntos base
+  geom_point(color = "#2c3e50", alpha = 0.7, size = 2) +
+  
+  # Agregar nombres con ggrepel para evitar superposición
+  geom_text_repel(
+    size = 3,
+    max.overlaps = 20,  # Ajusta este número para mostrar más o menos nombres
+    box.padding = 0.5,
+    segment.color = "#7f8c8d",
+    segment.alpha = 0.5
+  ) +
+  
+  # Mejorar el tema
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5),
+    axis.title = element_text(size = 12),
+    panel.grid.major = element_line(color = "#ecf0f1"),
+    panel.grid.minor = element_line(color = "#ecf0f1")
+  ) +
+  
+  # Títulos
+  labs(
+    title = "Distribución de Peleadores UFC",
+    subtitle = "Visualización t-SNE basada en estadísticas de rendimiento",
+    x = "t-SNE Dimensión 1",
+    y = "t-SNE Dimensión 2"
+  )
+
+# Guardar el resultado en caso de que queramos hacer más modificaciones
+tsne_coords <- tsne_data
+```
+
+```{r}
+# Calculamos el número óptimo de clusters
+set.seed(123)  # Para reproducibilidad
+nb <- NbClust(data = vars_normalized, 
+              distance = "euclidean",
+              min.nc = 2,  # Mínimo número de clusters a considerar
+              max.nc = 10, # Máximo número de clusters a considerar
+              method = "kmeans")
+
+# Ver el número recomendado por la mayoría de los índices
+print("Número óptimo de clusters según la mayoría de los índices:")
+table(nb$Best.n[1,])
+```
+
+
+```{r}
+## Realizar k-means clustering con 6 grupos
+set.seed(123)  # Para reproducibilidad
+clusters <- kmeans(vars_normalized, centers = 6, nstart = 25)
+
+# Añadir los clusters al dataframe de t-SNE
+tsne_data$cluster <- as.factor(clusters$cluster)
+
+# Crear el gráfico actualizado con clusters
+ggplot(tsne_data, aes(x = tSNE1, y = tSNE2, 
+                      color = cluster, 
+                      label = fighter)) +
+  # Puntos coloreados por cluster
+  geom_point(alpha = 0.7, size = 2) +
+  
+  # Nombres con ggrepel
+  geom_text_repel(
+    size = 3,
+    max.overlaps = 20,
+    box.padding = 0.5,
+    segment.alpha = 0.5,
+    show.legend = FALSE
+  ) +
+  
+  # Usar una paleta de colores más distintiva
+  scale_color_brewer(palette = "Set3") +
+  
+  # Tema y formato
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5),
+    axis.title = element_text(size = 12),
+    panel.grid.major = element_line(color = "#ecf0f1"),
+    panel.grid.minor = element_line(color = "#ecf0f1"),
+    legend.position = "right",
+    legend.title = element_text(face = "bold")
+  ) +
+  
+  # Títulos actualizados
+  labs(
+    title = "Clusters de Peleadores UFC",
+    subtitle = "Visualización t-SNE con agrupación k-means (k=6)",
+    x = "t-SNE Dimensión 1",
+    y = "t-SNE Dimensión 2",
+    color = "Cluster"
+  )
+
+```
+## Distribución de Clusters
+
+Una vez establecidos los diversos grupos o clusters, paso a llevar a cabo un análisis de estos grupos. El primer paso será analizar la distribución de estos clusters.
+
+```{r}
+clusters <- kmeans(vars_normalized, centers = 6, nstart = 25)$cluster
+# Crear el dataframe cluster_profiles
+cluster_profiles <- data.frame(
+  cluster = 1:6,
+  n_fighters = as.numeric(table(clusters))
+) %>%
+  mutate(porcentaje = (n_fighters / sum(n_fighters)) * 100)
+
+# Crear el gráfico de distribución
+ggplot(cluster_profiles, 
+       aes(x = factor(cluster), 
+           y = n_fighters, 
+           fill = factor(cluster))) +
+  # Barras
+  geom_bar(stat = "identity", width = 0.7) +
+  
+  # Etiquetas de valores
+  geom_text(aes(label = paste0(n_fighters, "\n(", sprintf("%.1f", porcentaje), "%)")),
+            position = position_stack(vjust = 0.5),
+            size = 4,
+            color = "black",
+            fontface = "bold") +
+  
+  # Escala y colores
+  scale_fill_brewer(palette = "Set3") +
+  scale_y_continuous(limits = c(0, max(cluster_profiles$n_fighters) * 1.1),
+                    breaks = seq(0, ceiling(max(cluster_profiles$n_fighters)/100)*100, 100)) +
+  
+  # Etiquetas y título
+  labs(title = "Distribución de Peleadores por Cluster",
+       x = "Cluster",
+       y = "Número de Peleadores") +
+  
+  # Tema y estilo
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    legend.position = "none",
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20)
+  )
+```
+
+```{r}
+# Definir las traducciones de las categorías de peso en el orden exacto que aparece en la leyenda
+weight_translations <- c(
+  "Flyweight" = "Peso Mosca",
+  "Bantamweight" = "Peso Gallo",
+  "Featherweight" = "Peso Pluma",
+  "Lightweight" = "Peso Ligero",
+  "Welterweight" = "Peso Wélter",
+  "Middleweight" = "Peso Medio",
+  "Light Heavyweight" = "Peso Semipesado",
+  "Heavyweight" = "Peso Pesado"
+)
+
+# Actualizar los datos con las categorías en español
+weight_analysis_es <- weight_analysis %>%
+  mutate(
+    weight_class_es = weight_translations[as.character(weight_class)]
+  )
+
+# Reordenar los niveles exactamente como en la imagen
+weight_analysis_es$weight_class_es <- factor(
+  weight_analysis_es$weight_class_es,
+  levels = c(
+    "Peso Mosca", "Peso Gallo", "Peso Pluma", "Peso Ligero",
+    "Peso Wélter", "Peso Medio", "Peso Semipesado", "Peso Pesado"
+  )
+)
+
+# Definir la misma paleta de colores que en la imagen
+weight_colors <- c(
+  "Peso Mosca" = "#FFB3B3",
+  "Peso Gallo" = "#99CCFF",
+  "Peso Pluma" = "#B3FFB3",
+  "Peso Ligero" = "#FFD699",
+  "Peso Wélter" = "#FFB3FF",
+  "Peso Medio" = "#B3FFFF",
+  "Peso Semipesado" = "#FFA366",
+  "Peso Pesado" = "#FF8080"
+)
+
+# Crear el gráfico exactamente igual al mostrado
+ggplot(weight_analysis_es, 
+       aes(x = factor(cluster), 
+           y = pct_cluster, 
+           fill = weight_class_es)) +
+  geom_bar(stat = "identity", 
+           position = "fill", 
+           width = 0.8) +
+  geom_text(aes(label = ifelse(pct_cluster >= 8, 
+                              sprintf("%.1f%%", pct_cluster), "")),
+            position = position_fill(vjust = 0.5),
+            size = 3.2,
+            color = "black",
+            fontface = "bold") +
+  scale_fill_manual(values = weight_colors) +
+  scale_y_continuous(labels = scales::percent_format(decimal.mark = ","),
+                    breaks = seq(0, 1, 0.2)) +
+  labs(
+    title = "Distribución de Categorías de Peso por Cluster",
+    subtitle = "Porcentaje de cada categoría dentro del cluster",
+    x = "Cluster",
+    y = "Porcentaje",
+    fill = "Categoría de Peso"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5),
+    legend.position = "right",
+    legend.title = element_text(face = "bold", size = 11),
+    legend.text = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20)
+  )
+```
+### Análisis Distribución de Clusters
+
+1.Respecto a la distribución general de agrupaciones:
+
+
+Los grupos más numerosos son el 1 (378 competidores, 23.9%) y el 4 (359 competidores, 22.7%), constituyendo casi la mitad de los competidores.
+El cluster 6 es notablemente el más pequeño (103 peleadores, 6.5%), sugiriendo un grupo más especializado.
+Los clusters 2, 3 y 5 mantienen tamaños similares (entre 213-265 luchadores, 13-17%).
+
+2.Características distintivas por agrupación:
+
+
+Cluster 1 (23.9%): Dominado por pesos ligeros, especialmente peso mosca (41.0%) y peso gallo (25.4%). Clara concentración en categorías ligeras.
+Cluster 2 (16.6%): Distribución más variada, con predominio de peso medio (24.8%) y peso semipesado (24.8%), seguido de peso pluma (20.2%).
+Cluster 3 (13.5%): Muestra un patrón equilibrado, destacando peso ligero (20.7%) y peso pesado (16.0%).
+Cluster 4 (22.7%): Notable presencia de peso medio (26.7%) y peso pesado (25.1%).
+Cluster 5 (16.8%): Destaca por peso ligero (22.6%) y peso semipesado (23.0%).
+Cluster 6 (6.5%): El más pequeño, con predominio de peso pluma (17.5%) y peso ligero (16.5%).
+
+3.Patrones llamativos:
+
+
+Existe una clara diferenciación en la distribución de pesos entre clusters.
+Algunos clusters muestran preferencia por categorías específicas mientras otros son más diversos.
+Los pesos extremos (mosca y pesado) tienden a concentrarse en clusters específicos.
+
+4.Implicaciones:
+
+La distribución sugiere que los estilos de lucha pueden transcender las categorías de peso.
+Cada cluster parece representar un perfil específico de luchador, combinando peso y probablemente estilo de pelea.
+La variación en el tamaño de los clusters indica que algunos estilos o combinaciones de características son más comunes que otros en el deporte.
+La existencia de clusters tan definidos sugiere patrones naturales en cómo se agrupan las características de los luchadores.
+
+## Análisis de rendimiento
+
+
+```{r}
+#  Density plots 
+density_data <- vars_clean %>%
+  mutate(cluster = as.factor(clusters)) %>%
+  select(
+    cluster,
+    `Derribos por Combate` = avg_takedowns_landed,
+    `Eficiencia en Derribos` = takedown_efficiency,
+    `Eficiencia en Striking` = striking_efficiency,
+    `Precisión en Derribos` = avg_takedown_pct,
+    `Precisión en Striking` = avg_sig_strikes_pct
+  ) %>%
+  pivot_longer(-cluster, names_to = "metric", values_to = "value")
+
+density_plot <- ggplot(density_data, aes(x = value, fill = cluster)) +
+  geom_density(alpha = 0.7) +
+  facet_wrap(~metric, scales = "free", ncol = 2) +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5),
+    strip.text = element_text(size = 10, face = "bold"),
+    axis.text = element_text(size = 9),
+    legend.position = "right",
+    legend.title = element_text(face = "bold"),
+    panel.spacing = unit(1, "lines")
+  ) +
+  labs(
+    title = "Distribución de Métricas por Cluster",
+    subtitle = "Densidad de distribución para cada característica",
+    x = "Valor",
+    y = "Densidad",
+    fill = "Cluster"
+  )
+print(density_plot)
+```
+#### Distribución de Métricas por Cluster (Gráfico de Densidad):
+
+
+Derribos por Combate: Mayor concentración entre 0-2.5 derribos, con el Cluster 6 mostrando una distribución más extendida hacia valores altos.
+Eficiencia en Derribos: Distribución concentrada en valores bajos, con algunos clusters mostrando picos en el rango 0.25-0.50.
+Eficiencia en Striking: Alta densidad en valores bajos (0-20), con colas largas hacia valores más altos.
+Precisión en Derribos: Distribución multimodal, con varios clusters mostrando picos en diferentes rangos.
+Precisión en Striking: Distribución más uniforme entre clusters, centrada aproximadamente en 0.40-0.60.
+
+```{r}
+# 1. Análisis de Grappling/Wrestling
+grappling_analysis <- vars_clean %>%
+  mutate(cluster = clusters) %>%
+  group_by(cluster) %>%
+  summarise(
+    # Derribos
+    `Derribos Promedio` = mean(avg_takedowns_landed),
+    `Precisión Derribos (%)` = mean(avg_takedown_pct) * 100,
+    `Eficiencia Derribos` = mean(takedown_efficiency),
+    # Sumisiones
+    `Intentos Sumisión` = mean(avg_sub_attempts)
+  ) %>%
+  mutate(across(where(is.numeric), round, 2))
+
+
+
+# Visualizaciones
+# 1. Gráfico para Grappling
+grappling_long <- grappling_analysis %>%
+  pivot_longer(-cluster, names_to = "metric", values_to = "value")
+
+ggplot(grappling_long, aes(x = factor(cluster), y = value, fill = metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~metric, scales = "free_y") +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal() +
+  labs(
+    title = "Características de Grappling por Cluster",
+    x = "Cluster",
+    y = "Valor"
+  ) +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 10),
+    legend.position = "none"
+  )
+
+
+# Imprimir resultados
+print("Análisis de Grappling por Cluster:")
+print(grappling_analysis)
+
+```
+#### Características de Grappling por Cluster:
+
+
+Derribos Promedio: Destacable variación entre clusters:
+
+Cluster 1: ~1.75 derribos
+Cluster 6: >4 derribos por combate, significativamente superior
+Resto de clusters: valores entre 0.5-1.5 derribos
+
+
+Eficiencia en Derribos: Cluster 6 muestra la mayor eficiencia, seguido por Cluster 1
+Intentos de Sumisión: Clusters 3 y 6 destacan con >1 intento por combate
+Precisión en Derribos: Valores superiores en Clusters 1 (~40%) y 6 (~50%)
+
+```{r}
+# 2. Análisis de Striking
+striking_analysis <- vars_clean %>%
+  mutate(cluster = clusters) %>%
+  group_by(cluster) %>%
+  summarise(
+    `Golpes Significativos` = mean(avg_sig_strikes_landed),
+    `Precisión Striking (%)` = mean(avg_sig_strikes_pct) * 100,
+    `Eficiencia Striking` = mean(striking_efficiency)
+  ) %>%
+  mutate(across(where(is.numeric), round, 2))
+# 2. Gráfico para Striking
+striking_long <- striking_analysis %>%
+  pivot_longer(-cluster, names_to = "metric", values_to = "value")
+
+ggplot(striking_long, aes(x = factor(cluster), y = value, fill = metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~metric, scales = "free_y") +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal() +
+  labs(
+    title = "Características de Striking por Cluster",
+    x = "Cluster",
+    y = "Valor"
+  ) +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.text = element_text(size = 10),
+    legend.position = "none"
+  )
+print("\nAnálisis de Striking por Cluster:")
+print(striking_analysis)
+```
+
+#### Características de Striking por Cluster:
+
+
+Eficiencia Striking:
+
+Cluster 5: Destaca notablemente (~20)
+Resto de clusters: Valores entre 2-5
+
+
+Golpes Significativos:
+
+Cluster 5: Aproximadamente 40 golpes
+Otros clusters: Valores relativamente uniformes entre 5-10
+
+
+Precisión Striking:
+
+Tendencia ascendente del Cluster 1 al 6
+Cluster 6: Mayor precisión (~52%)
+Valores generales entre 40-52%
+
+```{r}
+# 1. Calcular los scores medios por cluster
+style_summary <- vars_clean %>%
+  mutate(
+    cluster = factor(clusters),
+    offensive_score = (striking_efficiency + takedown_efficiency) / 2 * 100,
+    defensive_score = (1 - (avg_sig_strikes_pct + avg_takedown_pct) / 2) * 100
+  ) %>%
+  group_by(cluster) %>%
+  summarise(
+    Ofensiva = mean(offensive_score, na.rm = TRUE),
+    Defensiva = mean(defensive_score, na.rm = TRUE)
+  ) %>%
+  pivot_longer(-cluster, names_to = "tipo", values_to = "valor") %>%
+  mutate(valor = round(valor, 2))
+
+# 2. Crear un gráfico de barras agrupadas
+ggplot(style_summary, aes(x = cluster, y = valor, fill = tipo)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.8) +
+  geom_text(aes(label = sprintf("%.1f%%", valor)),
+            position = position_dodge(width = 0.8),
+            vjust = -0.5,
+            size = 3.5) +
+  scale_fill_manual(values = c("Defensiva" = "skyblue", "Ofensiva" = "coral")) +
+  theme_minimal() +
+  labs(
+    title = "Balance Ofensivo-Defensivo por Cluster",
+    subtitle = "Comparación de scores promedio",
+    x = "Cluster",
+    y = "Score (%)",
+    fill = "Estilo"
+  ) +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    legend.title = element_text(face = "bold"),
+    legend.position = "right"
+  ) +
+  ylim(0, max(style_summary$valor) * 1.1)  # Añadir espacio para las etiquetas
+
+# 3. Imprimir un resumen claro
+cluster_styles <- style_summary %>%
+  pivot_wider(names_from = tipo, values_from = valor) %>%
+  mutate(
+    Tendencia = case_when(
+      Ofensiva > Defensiva + 5 ~ "Predominantemente Ofensivo",
+      Defensiva > Ofensiva + 5 ~ "Predominantemente Defensivo",
+      TRUE ~ "Balanceado"
+    )
+  )
+
+print("Resumen de Estilos por Cluster:")
+print(cluster_styles)
+```
+#### Balance Ofensivo-Defensivo:
+
+
+Ofensiva:
+
+Cluster 5: Valor extraordinariamente alto (995.5%)
+Cluster 6: Segundo más alto (340.9%)
+Resto: Valores entre 170-260%
+
+
+Defensiva:
+
+Valores más uniformes entre clusters (45-70%)
+Menor variabilidad que en la ofensiva
+
+## Conclusiones:
+
+- Especialización Técnica:
+
+
+El Cluster 6 sobresale en grappling, fusionando una elevada eficacia en derribos con elevados números en striking.
+El Cluster 5 exhibe una supremacía excepcional en la ofensiva de striking.
+Los Clusters 1-4 exhiben perfiles más equilibrados, con especializaciones de moderada intensidad.
+
+- Patrones de Efectividad:
+
+
+Existe una correlación positiva entre la precisión y la eficiencia en ambos aspectos (striking y grappling)
+Los clusters más especializados (5 y 6) muestran mayor efectividad en sus áreas respectivas
+La precisión en striking muestra una progresión positiva a través de los clusters
+
+- Implicaciones Estratégicas:
+
+
+Se identifican dos enfoques de alta especialización: striking dominante (Cluster 5) y grappling avanzado con striking preciso (Cluster 6)
+Los clusters intermedios sugieren diferentes balances entre striking y grappling
+La variabilidad en el balance ofensivo-defensivo indica distintas aproximaciones al combate
+
+
