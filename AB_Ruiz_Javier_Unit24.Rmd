@@ -1,23 +1,21 @@
 ---
-title: "AB Final Unit24"
+title: "AB Final Unit 24"
 output: html_notebook
 ---
 
-#Preparación del DataSet
+# Análisis de Cluster UFC; Estilos de Lucha
 
--   Importo el conjunto de datos
+## 1. Preparación del Entorno
 
--   Instalo los paquetes y librerías necesarias
-
--   Limpio el conjunto de datos para su manipulación
-
--   Selección de las variables para el clustering
+### 1.1 Importo el conjunto de datos
 
 ```{r}
 #Importo el DataSet
 library(readr)
 ufc_master <- read_csv("ufc-master.csv")
 ```
+
+### 1.2 Instalo los paquetes y librerías necesarias
 
 ```{r}
 # Cargar las librerías necesarias
@@ -42,6 +40,8 @@ library(ggrepel)
 library(NbClust)
 library(GGally)
 ```
+
+### 1.3 Procesamiento inicial de datos
 
 ```{r}
 # 1. Primero creamos el dataframe de luchadores rojos
@@ -142,9 +142,12 @@ print(dim(latest_fighter_data))
 print("\nDimensiones de fighter_stats:")
 print(dim(fighter_stats))
 ```
-#Distancias
+
+## 2. Distancias
 
 Procedo a crear distancias con los metodos 'Euclidean' y 'Gower', para comparar cual de los dos metodos voy a utilizar en cla creación del cluster
+
+### 2.1 Función para distancia Euclidiana y Gower
 
 ```{r}
 # Definimos una función para Euclidiana y Gower 
@@ -189,8 +192,7 @@ dist_euclidean <- distances$euclidean
 dist_gower <- distances$gower
 ```
 
-
-
+### 2.2 Comparación de distancias
 
 ```{r}
 compare_euclidean_gower <- function(data_normalized) {
@@ -304,7 +306,9 @@ En base a las visualizaciones, considero que la distancia de Gower es la alterna
 
 El violin plot de Gower presenta una dispersión más balanceada y uniforme, con menos valores extremos, lo que indica que será más sólida en la creación de agrupaciones. Los boxplots corroboran esta observación, evidenciando una distribución de las distancias más uniforme. Además, nuestro dataset de UFC incluye una combinación de variables (tanto numéricas como categóricas, como el stance y diversas métricas de rendimiento), Gower resulta especialmente adecuada puesto que está diseñada específicamente para gestionar variables combinadas, normalizándolas de manera automática.
 
-#Cluester
+## 3. Cluester
+
+### 3.1 Creación t-SNE
 
 ```{r}
 # 1. Crear t-SNE
@@ -354,6 +358,8 @@ ggplot(tsne_data, aes(x = tSNE1, y = tSNE2, label = fighter)) +
 tsne_coords <- tsne_data
 ```
 
+### 3.2 Nº Optimo de Clusters
+
 ```{r}
 # Calculamos el número óptimo de clusters
 set.seed(123)  # Para reproducibilidad
@@ -368,6 +374,7 @@ print("Número óptimo de clusters según la mayoría de los índices:")
 table(nb$Best.n[1,])
 ```
 
+### 3.3 t-SNE con Clusters
 
 ```{r}
 ## Realizar k-means clustering con 6 grupos
@@ -418,7 +425,10 @@ ggplot(tsne_data, aes(x = tSNE1, y = tSNE2,
   )
 
 ```
-## Distribución de Clusters
+
+## 4. Análisis de Clusters
+
+### 4.1 Distribución de Clusters
 
 Una vez establecidos los diversos grupos o clusters, paso a llevar a cabo un análisis de estos grupos. El primer paso será analizar la distribución de estos clusters.
 
@@ -470,34 +480,35 @@ ggplot(cluster_profiles,
 ```
 
 ```{r}
-# Definir las traducciones de las categorías de peso en el orden exacto que aparece en la leyenda
-weight_translations <- c(
-  "Flyweight" = "Peso Mosca",
-  "Bantamweight" = "Peso Gallo",
-  "Featherweight" = "Peso Pluma",
-  "Lightweight" = "Peso Ligero",
-  "Welterweight" = "Peso Wélter",
-  "Middleweight" = "Peso Medio",
-  "Light Heavyweight" = "Peso Semipesado",
-  "Heavyweight" = "Peso Pesado"
-)
-
-# Actualizar los datos con las categorías en español
-weight_analysis_es <- weight_analysis %>%
+# Crear el dataframe con la información de peso y cluster
+weight_cluster_analysis <- vars_clean %>%
   mutate(
-    weight_class_es = weight_translations[as.character(weight_class)]
-  )
-
-# Reordenar los niveles exactamente como en la imagen
-weight_analysis_es$weight_class_es <- factor(
-  weight_analysis_es$weight_class_es,
-  levels = c(
+    cluster = clusters,
+    weightClass = case_when(
+      weightLbs <= 125 ~ "Peso Mosca",
+      weightLbs <= 135 ~ "Peso Gallo",
+      weightLbs <= 145 ~ "Peso Pluma",
+      weightLbs <= 155 ~ "Peso Ligero",
+      weightLbs <= 170 ~ "Peso Wélter",
+      weightLbs <= 185 ~ "Peso Medio",
+      weightLbs <= 205 ~ "Peso Semipesado",
+      TRUE ~ "Peso Pesado"
+    )
+  ) %>%
+  # Asegurar el orden correcto de las categorías de peso
+  mutate(weightClass = factor(weightClass, levels = c(
     "Peso Mosca", "Peso Gallo", "Peso Pluma", "Peso Ligero",
     "Peso Wélter", "Peso Medio", "Peso Semipesado", "Peso Pesado"
-  )
-)
+  )))
 
-# Definir la misma paleta de colores que en la imagen
+# Calcular los porcentajes por cluster
+weight_distribution <- weight_cluster_analysis %>%
+  group_by(cluster, weightClass) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  group_by(cluster) %>%
+  mutate(pct_cluster = n / sum(n) * 100)
+
+# Definir la paleta de colores
 weight_colors <- c(
   "Peso Mosca" = "#FFB3B3",
   "Peso Gallo" = "#99CCFF",
@@ -509,11 +520,11 @@ weight_colors <- c(
   "Peso Pesado" = "#FF8080"
 )
 
-# Crear el gráfico exactamente igual al mostrado
-ggplot(weight_analysis_es, 
+# Crear el gráfico
+ggplot(weight_distribution, 
        aes(x = factor(cluster), 
            y = pct_cluster, 
-           fill = weight_class_es)) +
+           fill = weightClass)) +
   geom_bar(stat = "identity", 
            position = "fill", 
            width = 0.8) +
@@ -547,42 +558,46 @@ ggplot(weight_analysis_es,
     panel.border = element_blank(),
     plot.margin = margin(t = 20, r = 20, b = 20, l = 20)
   )
+
+# También crear una tabla resumen para análisis detallado
+weight_cluster_summary <- weight_distribution %>%
+  arrange(cluster, desc(pct_cluster)) %>%
+  group_by(cluster) %>%
+  mutate(
+    principales = paste(
+      first(sprintf("%s (%.1f%%)", weightClass, pct_cluster)),
+      nth(sprintf("%s (%.1f%%)", weightClass, pct_cluster), 2),
+      sep = ", "
+    )
+  ) %>%
+  summarise(
+    total_fighters = sum(n),
+    pct_total = total_fighters / sum(weight_distribution$n) * 100,
+    categorias_principales = first(principales)
+  )
+
+print(weight_cluster_summary)
 ```
-### Análisis Distribución de Clusters
 
 1.Respecto a la distribución general de agrupaciones:
 
-
-Los grupos más numerosos son el 1 (378 competidores, 23.9%) y el 4 (359 competidores, 22.7%), constituyendo casi la mitad de los competidores.
-El cluster 6 es notablemente el más pequeño (103 peleadores, 6.5%), sugiriendo un grupo más especializado.
-Los clusters 2, 3 y 5 mantienen tamaños similares (entre 213-265 luchadores, 13-17%).
+Los grupos más numerosos son el 1 (378 competidores, 23.9%) y el 4 (359 competidores, 22.7%), constituyendo casi la mitad de los competidores. El cluster 6 es notablemente el más pequeño (103 peleadores, 6.5%), sugiriendo un grupo más especializado. Los clusters 2, 3 y 5 mantienen tamaños similares (entre 213-265 luchadores, 13-17%).
 
 2.Características distintivas por agrupación:
 
-
-Cluster 1 (23.9%): Dominado por pesos ligeros, especialmente peso mosca (41.0%) y peso gallo (25.4%). Clara concentración en categorías ligeras.
-Cluster 2 (16.6%): Distribución más variada, con predominio de peso medio (24.8%) y peso semipesado (24.8%), seguido de peso pluma (20.2%).
-Cluster 3 (13.5%): Muestra un patrón equilibrado, destacando peso ligero (20.7%) y peso pesado (16.0%).
-Cluster 4 (22.7%): Notable presencia de peso medio (26.7%) y peso pesado (25.1%).
-Cluster 5 (16.8%): Destaca por peso ligero (22.6%) y peso semipesado (23.0%).
-Cluster 6 (6.5%): El más pequeño, con predominio de peso pluma (17.5%) y peso ligero (16.5%).
+Cluster 1 (23.9%): Dominado por pesos ligeros, especialmente peso mosca (41.0%) y peso gallo (25.4%). Clara concentración en categorías ligeras. Cluster 2 (16.6%): Distribución más variada, con predominio de peso medio (24.8%) y peso semipesado (24.8%), seguido de peso pluma (20.2%). Cluster 3 (13.5%): Muestra un patrón equilibrado, destacando peso ligero (20.7%) y peso pesado (16.0%). Cluster 4 (22.7%): Notable presencia de peso medio (26.7%) y peso pesado (25.1%). Cluster 5 (16.8%): Destaca por peso ligero (22.6%) y peso semipesado (23.0%). Cluster 6 (6.5%): El más pequeño, con predominio de peso pluma (17.5%) y peso ligero (16.5%).
 
 3.Patrones llamativos:
 
-
-Existe una clara diferenciación en la distribución de pesos entre clusters.
-Algunos clusters muestran preferencia por categorías específicas mientras otros son más diversos.
-Los pesos extremos (mosca y pesado) tienden a concentrarse en clusters específicos.
+Existe una clara diferenciación en la distribución de pesos entre clusters. Algunos clusters muestran preferencia por categorías específicas mientras otros son más diversos. Los pesos extremos (mosca y pesado) tienden a concentrarse en clusters específicos.
 
 4.Implicaciones:
 
-La distribución sugiere que los estilos de lucha pueden transcender las categorías de peso.
-Cada cluster parece representar un perfil específico de luchador, combinando peso y probablemente estilo de pelea.
-La variación en el tamaño de los clusters indica que algunos estilos o combinaciones de características son más comunes que otros en el deporte.
-La existencia de clusters tan definidos sugiere patrones naturales en cómo se agrupan las características de los luchadores.
+La distribución sugiere que los estilos de lucha pueden transcender las categorías de peso. Cada cluster parece representar un perfil específico de luchador, combinando peso y probablemente estilo de pelea. La variación en el tamaño de los clusters indica que algunos estilos o combinaciones de características son más comunes que otros en el deporte. La existencia de clusters tan definidos sugiere patrones naturales en cómo se agrupan las características de los luchadores.
 
-## Análisis de rendimiento
+### 4.2 Análisis de rendimiento
 
+#### 4.2.1 Distribución de métricas
 
 ```{r}
 #  Density plots 
@@ -621,14 +636,10 @@ density_plot <- ggplot(density_data, aes(x = value, fill = cluster)) +
   )
 print(density_plot)
 ```
-#### Distribución de Métricas por Cluster (Gráfico de Densidad):
 
+Derribos por Combate: Mayor concentración entre 0-2.5 derribos, con el Cluster 6 mostrando una distribución más extendida hacia valores altos. Eficiencia en Derribos: Distribución concentrada en valores bajos, con algunos clusters mostrando picos en el rango 0.25-0.50. Eficiencia en Striking: Alta densidad en valores bajos (0-20), con colas largas hacia valores más altos. Precisión en Derribos: Distribución multimodal, con varios clusters mostrando picos en diferentes rangos. Precisión en Striking: Distribución más uniforme entre clusters, centrada aproximadamente en 0.40-0.60.
 
-Derribos por Combate: Mayor concentración entre 0-2.5 derribos, con el Cluster 6 mostrando una distribución más extendida hacia valores altos.
-Eficiencia en Derribos: Distribución concentrada en valores bajos, con algunos clusters mostrando picos en el rango 0.25-0.50.
-Eficiencia en Striking: Alta densidad en valores bajos (0-20), con colas largas hacia valores más altos.
-Precisión en Derribos: Distribución multimodal, con varios clusters mostrando picos en diferentes rangos.
-Precisión en Striking: Distribución más uniforme entre clusters, centrada aproximadamente en 0.40-0.60.
+#### 4.2.2 Grappling
 
 ```{r}
 # 1. Análisis de Grappling/Wrestling
@@ -674,19 +685,14 @@ print("Análisis de Grappling por Cluster:")
 print(grappling_analysis)
 
 ```
-#### Características de Grappling por Cluster:
-
 
 Derribos Promedio: Destacable variación entre clusters:
 
-Cluster 1: ~1.75 derribos
-Cluster 6: >4 derribos por combate, significativamente superior
-Resto de clusters: valores entre 0.5-1.5 derribos
+Cluster 1: \~1.75 derribos Cluster 6: \>4 derribos por combate, significativamente superior Resto de clusters: valores entre 0.5-1.5 derribos
 
+Eficiencia en Derribos: Cluster 6 muestra la mayor eficiencia, seguido por Cluster 1 Intentos de Sumisión: Clusters 3 y 6 destacan con \>1 intento por combate Precisión en Derribos: Valores superiores en Clusters 1 (\~40%) y 6 (\~50%)
 
-Eficiencia en Derribos: Cluster 6 muestra la mayor eficiencia, seguido por Cluster 1
-Intentos de Sumisión: Clusters 3 y 6 destacan con >1 intento por combate
-Precisión en Derribos: Valores superiores en Clusters 1 (~40%) y 6 (~50%)
+#### 4.2.3 Striking
 
 ```{r}
 # 2. Análisis de Striking
@@ -722,26 +728,19 @@ print("\nAnálisis de Striking por Cluster:")
 print(striking_analysis)
 ```
 
-#### Características de Striking por Cluster:
-
-
 Eficiencia Striking:
 
-Cluster 5: Destaca notablemente (~20)
-Resto de clusters: Valores entre 2-5
-
+Cluster 5: Destaca notablemente (\~20) Resto de clusters: Valores entre 2-5
 
 Golpes Significativos:
 
-Cluster 5: Aproximadamente 40 golpes
-Otros clusters: Valores relativamente uniformes entre 5-10
-
+Cluster 5: Aproximadamente 40 golpes Otros clusters: Valores relativamente uniformes entre 5-10
 
 Precisión Striking:
 
-Tendencia ascendente del Cluster 1 al 6
-Cluster 6: Mayor precisión (~52%)
-Valores generales entre 40-52%
+Tendencia ascendente del Cluster 1 al 6 Cluster 6: Mayor precisión (\~52%) Valores generales entre 40-52%
+
+#### 4.2.4 Balance Ofensivo/Defensivo
 
 ```{r}
 # 1. Calcular los scores medios por cluster
@@ -798,42 +797,74 @@ cluster_styles <- style_summary %>%
 print("Resumen de Estilos por Cluster:")
 print(cluster_styles)
 ```
-#### Balance Ofensivo-Defensivo:
-
 
 Ofensiva:
 
-Cluster 5: Valor extraordinariamente alto (995.5%)
-Cluster 6: Segundo más alto (340.9%)
-Resto: Valores entre 170-260%
-
+Cluster 5: Valor extraordinariamente alto (995.5%) Cluster 6: Segundo más alto (340.9%) Resto: Valores entre 170-260%
 
 Defensiva:
 
-Valores más uniformes entre clusters (45-70%)
-Menor variabilidad que en la ofensiva
+Valores más uniformes entre clusters (45-70%) Menor variabilidad que en la ofensiva
 
-## Conclusiones:
+#### 4.2.5 Tasa KO/Sumisión/Victoria
 
-- Especialización Técnica:
+```{r}
+# Añadimos los clusters a vars_clean
+vars_clean$cluster <- clusters
+
+# Ahora sí podemos proceder con el análisis
+career_progression <- vars_clean %>%
+  group_by(cluster) %>%
+  summarise(
+    # Efectividad general
+    avg_win_rate = mean(win_rate, na.rm = TRUE),
+    avg_ko_rate = mean(ko_rate, na.rm = TRUE),
+    avg_sub_rate = mean(sub_rate, na.rm = TRUE),
+    
+    # Eficiencia técnica
+    avg_strike_efficiency = mean(striking_efficiency, na.rm = TRUE),
+    avg_takedown_efficiency = mean(takedown_efficiency, na.rm = TRUE),
+    
+    # Volumen de acciones
+    avg_strikes = mean(avg_sig_strikes_landed, na.rm = TRUE),
+    avg_takedowns = mean(avg_takedowns_landed, na.rm = TRUE),
+    avg_submissions = mean(avg_sub_attempts, na.rm = TRUE)
+  )
 
 
-El Cluster 6 sobresale en grappling, fusionando una elevada eficacia en derribos con elevados números en striking.
-El Cluster 5 exhibe una supremacía excepcional en la ofensiva de striking.
-Los Clusters 1-4 exhiben perfiles más equilibrados, con especializaciones de moderada intensidad.
-
-- Patrones de Efectividad:
 
 
-Existe una correlación positiva entre la precisión y la eficiencia en ambos aspectos (striking y grappling)
-Los clusters más especializados (5 y 6) muestran mayor efectividad en sus áreas respectivas
-La precisión en striking muestra una progresión positiva a través de los clusters
+# Visualización de tasas de victoria y finalización
+victory_data <- career_progression %>%
+  select(cluster, avg_win_rate, avg_ko_rate, avg_sub_rate) %>%
+  pivot_longer(cols = c(avg_win_rate, avg_ko_rate, avg_sub_rate),
+               names_to = "metric",
+               values_to = "value")
 
-- Implicaciones Estratégicas:
+ggplot(victory_data, aes(x = factor(cluster), y = value, fill = metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = sprintf("%.3f", value)), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5) +
+  scale_fill_brewer(palette = "Set2",
+                    labels = c("Tasa KO", "Tasa Sumisión", "Tasa Victoria")) +
+  theme_minimal() +
+  labs(title = "Tasas de Victoria y Finalización por Cluster",
+       x = "Cluster",
+       y = "Tasa",
+       fill = "Métrica")
+```
 
+## 5. Conclusiones:
 
-Se identifican dos enfoques de alta especialización: striking dominante (Cluster 5) y grappling avanzado con striking preciso (Cluster 6)
-Los clusters intermedios sugieren diferentes balances entre striking y grappling
-La variabilidad en el balance ofensivo-defensivo indica distintas aproximaciones al combate
+-   Especialización Técnica:
 
+El Cluster 6 sobresale en grappling, fusionando una elevada eficacia en derribos con elevados números en striking. El Cluster 5 exhibe una supremacía excepcional en la ofensiva de striking. Los Clusters 1-4 exhiben perfiles más equilibrados, con especializaciones de moderada intensidad.
 
+-   Patrones de Efectividad:
+
+Existe una correlación positiva entre la precisión y la eficiencia en ambos aspectos (striking y grappling) Los clusters más especializados (5 y 6) muestran mayor efectividad en sus áreas respectivas La precisión en striking muestra una progresión positiva a través de los clusters
+
+-   Implicaciones Estratégicas:
+
+Se identifican dos enfoques de alta especialización: striking dominante (Cluster 5) y grappling avanzado con striking preciso (Cluster 6) Los clusters intermedios sugieren diferentes balances entre striking y grappling La variabilidad en el balance ofensivo-defensivo indica distintas aproximaciones al combate
